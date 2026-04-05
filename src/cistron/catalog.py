@@ -1,4 +1,4 @@
-"""Skill catalog generator and static linter."""
+"""Skill catalog generator — produces an overview document from a collection."""
 
 import re
 from collections import defaultdict
@@ -6,12 +6,10 @@ from pathlib import Path
 
 from .parser import parse_frontmatter
 
-VALID_IMPACTS = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
 
-
-def extract_calls(body: str) -> list[str]:
+def extract_references(body: str) -> list[str]:
     """Extract skill cross-references from `## Calls` or `## Motifs` sections."""
-    calls = []
+    refs = []
     in_section = False
     in_code_block = False
     for line in body.splitlines():
@@ -20,7 +18,7 @@ def extract_calls(body: str) -> list[str]:
             continue
         if in_code_block:
             continue
-        if re.match(r"^##\s+(Calls|Motifs)", line):
+        if re.match(r"^##\s+(Calls|Motifs|References)", line):
             in_section = True
             continue
         if in_section and line.startswith("##"):
@@ -29,8 +27,8 @@ def extract_calls(body: str) -> list[str]:
         if in_section and line.startswith("- "):
             m = re.match(r"- `([\w-]+)`", line) or re.match(r"- \[([\w-]+)\]", line)
             if m:
-                calls.append(m.group(1))
-    return calls
+                refs.append(m.group(1))
+    return refs
 
 
 def load_skills(skills_dir: Path) -> list[dict]:
@@ -50,50 +48,15 @@ def load_skills(skills_dir: Path) -> list[dict]:
             "description": fm.get("description", ""),
             "invocable": fm.get("user_invocable", "true").lower() != "false",
             "lines": fm.get("_lines", 0),
-            "calls": extract_calls(body),
-            "has_reference": (d / "REFERENCE.md").exists(),
+            "references": extract_references(body),
+            "has_reference_doc": (d / "REFERENCE.md").exists(),
             "has_scripts": (d / "scripts").exists(),
-            "retired": "retired" in body.lower()[:200],
         })
     return skills
 
 
-def lint(skills: list[dict], external_tools: set[str] | None = None) -> list[str]:
-    """Static analysis across the skill collection. Returns list of issue strings."""
-    issues = []
-    all_names = {s["name"] for s in skills}
-    external = external_tools or set()
-
-    for s in skills:
-        name = s["name"]
-
-        if not s["description"]:
-            issues.append(f"{name}: missing description")
-        elif len(s["description"]) < 20:
-            issues.append(f"{name}: description too short ({len(s['description'])} chars)")
-
-        has_trigger = bool(re.search(r'"[^"]+"', s["description"])) or "use when" in s["description"].lower()
-        if s["invocable"] and not has_trigger:
-            issues.append(f"{name}: invocable but no trigger phrases or 'Use when' in description")
-
-        if s["lines"] > 800 and not s["has_reference"]:
-            issues.append(f"{name}: {s['lines']} lines without REFERENCE.md (>800 = bloated)")
-
-        if s["lines"] < 10 and not s["retired"]:
-            issues.append(f"{name}: only {s['lines']} lines (stub?)")
-
-        for call in s["calls"]:
-            if call not in all_names and call not in external:
-                issues.append(f"{name}: cross-ref to '{call}' but no such skill exists")
-
-        if s["name"] != s["dir"]:
-            issues.append(f"{s['dir']}/: name field '{s['name']}' does not match directory")
-
-    return issues
-
-
 def compile_catalog(skills: list[dict]) -> str:
-    """Compile skills into a structured catalog document."""
+    """Compile skills into a structured overview document."""
     from datetime import datetime
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -107,34 +70,24 @@ def compile_catalog(skills: list[dict]) -> str:
         "",
     ]
 
-    # Cross-reference frequency
     callers: dict[str, list[str]] = defaultdict(list)
     for s in skills:
-        for call in s["calls"]:
-            callers[call].append(s["name"])
+        for ref in s["references"]:
+            callers[ref].append(s["name"])
 
-    most_called = sorted(callers.items(), key=lambda x: -len(x[1]))[:10]
-    if most_called:
-        lines.append("## Most Referenced Skills")
+    most_referenced = sorted(callers.items(), key=lambda x: -len(x[1]))[:10]
+    if most_referenced:
+        lines.append("## Most Referenced")
         lines.append("")
-        for name, caller_list in most_called:
+        for name, caller_list in most_referenced:
             lines.append(f"- **{name}** ({len(caller_list)}): {', '.join(caller_list)}")
         lines.append("")
 
-    # Full list
     lines.append("## All Skills")
     lines.append("")
     for s in sorted(skills, key=lambda x: x["name"]):
         inv = "" if s["invocable"] else " [ref]"
         desc = s["description"][:150] if s["description"] else "_(no description)_"
         lines.append(f"- **{s['name']}**{inv}: {desc}")
-
-    issues = lint(skills)
-    if issues:
-        lines.append("")
-        lines.append(f"## Issues ({len(issues)})")
-        lines.append("")
-        for issue in sorted(issues):
-            lines.append(f"- {issue}")
 
     return "\n".join(lines)
