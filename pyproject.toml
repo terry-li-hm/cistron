@@ -1,0 +1,32 @@
+[project]
+name = "cistron"
+version = "0.1.0"
+description = "Toolkit for treating agent skills as code — compile, lint, catalog, and share patterns across SKILL.md files."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Terry Li" }]
+requires-python = ">=3.10"
+keywords = ["agent-skills", "claude-code", "ai-agents", "skill-md", "linter", "compiler"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = []
+
+[project.scripts]
+cistron = "cistron.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/terry-li-hm/cistron"
+Repository = "https://github.com/terry-li-hm/cistron"
+Issues = "https://github.com/terry-li-hm/cistron/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cistron"]
